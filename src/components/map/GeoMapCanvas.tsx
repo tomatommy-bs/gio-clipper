@@ -27,6 +27,7 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
   const svgRef = useRef<SVGSVGElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const hasDragged = useRef(false);
   const [photoUrls, setPhotoUrls] = useState<PhotoUrls>({});
 
   // 割り当て済みエリアの写真URLを読み込む
@@ -66,15 +67,21 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     setIsPanning(true);
+    hasDragged.current = false;
     panStart.current = { x: e.clientX, y: e.clientY, tx: transform.x, ty: transform.y };
   }, [transform]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isPanning || !panStart.current) return;
+    const dx = e.clientX - panStart.current.x;
+    const dy = e.clientY - panStart.current.y;
+    if (!hasDragged.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      hasDragged.current = true;
+    }
     onTransformChange({
       ...transform,
-      x: panStart.current.tx + (e.clientX - panStart.current.x),
-      y: panStart.current.ty + (e.clientY - panStart.current.y),
+      x: panStart.current.tx + dx,
+      y: panStart.current.ty + dy,
     });
   }, [isPanning, transform, onTransformChange]);
 
@@ -123,7 +130,7 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
           return (
             <g
               key={region.id}
-              onClick={() => onRegionClick(region.id)}
+              onClick={() => { if (!hasDragged.current) onRegionClick(region.id); }}
               className="cursor-pointer"
             >
               {visited ? (
