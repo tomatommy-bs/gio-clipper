@@ -4,7 +4,8 @@ import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import GeoMapCanvas from "@/components/map/GeoMapCanvas";
+import GeoMapCanvas, { type Transform } from "@/components/map/GeoMapCanvas";
+import MapZoomControls from "@/components/map/MapZoomControls";
 import RegionEditModal from "@/components/map/RegionEditModal";
 import { fetchTemplate } from "@/lib/geo/template-registry";
 import { getCollection } from "@/lib/storage/collections-store";
@@ -20,10 +21,10 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
   const [collection, setCollection] = useState<Collection | null>(null);
   const [editingRegionId, setEditingRegionId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1 });
 
-  const { assignPhoto, updateSettings, removeAssignment } = useRegionAssignment(id);
+  const { assignPhoto, removeAssignment } = useRegionAssignment(id);
 
-  // コレクションとテンプレートを読み込む
   useEffect(() => {
     const col = getCollection(id);
     if (!col) { router.replace("/"); return; }
@@ -31,7 +32,6 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
     fetchTemplate(col.templateId).then(setTemplate).catch(console.error);
   }, [id, router]);
 
-  // 状態変更後にコレクションを再読み込み
   function refreshCollection() {
     const col = getCollection(id);
     if (col) setCollection({ ...col });
@@ -78,7 +78,7 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
     : null;
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col bg-background">
       <header className="border-b px-4 py-3 flex items-center gap-3">
         <button onClick={() => router.push("/")} className="p-1.5 rounded hover:bg-accent transition-colors">
           <ArrowLeft className="w-4 h-4" />
@@ -95,16 +95,15 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
         </Button>
       </header>
 
-      <div className="flex-1 relative">
+      <div className="flex-1 min-h-0 relative">
         <GeoMapCanvas
           template={template}
           collection={collection}
+          transform={transform}
+          onTransformChange={setTransform}
           onRegionClick={setEditingRegionId}
         />
-        {/* ズームヒント */}
-        <p className="absolute bottom-4 right-4 text-xs text-muted-foreground/60 pointer-events-none">
-          スクロールでズーム・ドラッグで移動
-        </p>
+        <MapZoomControls transform={transform} onTransformChange={setTransform} />
       </div>
 
       {editingRegion && (

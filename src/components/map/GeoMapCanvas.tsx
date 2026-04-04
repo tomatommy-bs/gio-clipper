@@ -5,25 +5,26 @@ import type { GeoTemplate } from "@/lib/geo/types";
 import type { Collection } from "@/lib/storage/types";
 import { getPhotoUrl } from "@/lib/storage/photo-db";
 
-interface Props {
-  template: GeoTemplate;
-  collection: Collection;
-  onRegionClick: (regionId: string) => void;
-}
-
-interface Transform {
+export interface Transform {
   x: number;
   y: number;
   scale: number;
+}
+
+interface Props {
+  template: GeoTemplate;
+  collection: Collection;
+  transform: Transform;
+  onTransformChange: (t: Transform) => void;
+  onRegionClick: (regionId: string) => void;
 }
 
 interface PhotoUrls {
   [regionId: string]: string;
 }
 
-export default function GeoMapCanvas({ template, collection, onRegionClick }: Props) {
+export default function GeoMapCanvas({ template, collection, transform, onTransformChange, onRegionClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1 });
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   const [photoUrls, setPhotoUrls] = useState<PhotoUrls>({});
@@ -55,11 +56,11 @@ export default function GeoMapCanvas({ template, collection, onRegionClick }: Pr
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    setTransform((prev) => {
-      const newScale = Math.max(0.3, Math.min(20, prev.scale * factor));
-      return { ...prev, scale: newScale };
+    onTransformChange({
+      ...transform,
+      scale: Math.max(0.3, Math.min(20, transform.scale * factor)),
     });
-  }, []);
+  }, [transform, onTransformChange]);
 
   // マウスでパン
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -70,10 +71,12 @@ export default function GeoMapCanvas({ template, collection, onRegionClick }: Pr
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isPanning || !panStart.current) return;
-    const dx = e.clientX - panStart.current.x;
-    const dy = e.clientY - panStart.current.y;
-    setTransform((prev) => ({ ...prev, x: panStart.current!.tx + dx, y: panStart.current!.ty + dy }));
-  }, [isPanning]);
+    onTransformChange({
+      ...transform,
+      x: panStart.current.tx + (e.clientX - panStart.current.x),
+      y: panStart.current.ty + (e.clientY - panStart.current.y),
+    });
+  }, [isPanning, transform, onTransformChange]);
 
   const handleMouseUp = useCallback(() => {
     setIsPanning(false);
@@ -101,11 +104,6 @@ export default function GeoMapCanvas({ template, collection, onRegionClick }: Pr
           {regions.map((region) => {
             const assignment = collection.assignments[region.id];
             if (!assignment || !photoUrls[region.id]) return null;
-            const { scale, offsetX, offsetY } = assignment.photoSettings;
-            const { x, y, width, height } = region.bbox;
-            const cx = x + width / 2;
-            const cy = y + height / 2;
-            const imgSize = Math.max(width, height) * scale;
             return (
               <clipPath key={region.id} id={`clip-${region.id}`}>
                 <path d={region.path} />
@@ -129,7 +127,6 @@ export default function GeoMapCanvas({ template, collection, onRegionClick }: Pr
               className="cursor-pointer"
             >
               {visited ? (
-                // 訪問済み: 写真クリップ表示
                 <g clipPath={`url(#clip-${region.id})`}>
                   <image
                     href={photoUrl}
@@ -139,7 +136,6 @@ export default function GeoMapCanvas({ template, collection, onRegionClick }: Pr
                     height={Math.max(width, height) * assignment.photoSettings.scale}
                     preserveAspectRatio="xMidYMid slice"
                   />
-                  {/* ホバー時の枠線 */}
                   <path
                     d={region.path}
                     fill="transparent"
@@ -149,7 +145,6 @@ export default function GeoMapCanvas({ template, collection, onRegionClick }: Pr
                   />
                 </g>
               ) : (
-                // 未訪問: 破線プレースホルダー
                 <path
                   d={region.path}
                   fill="transparent"
