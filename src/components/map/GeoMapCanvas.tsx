@@ -16,6 +16,7 @@ interface Props {
   collection: Collection;
   transform: Transform;
   onTransformChange: (t: Transform) => void;
+  mapMode: 'edit' | 'pan';
   onRegionClick: (regionId: string) => void;
 }
 
@@ -23,13 +24,15 @@ interface PhotoUrls {
   [regionId: string]: string;
 }
 
-export default function GeoMapCanvas({ template, collection, transform, onTransformChange, onRegionClick }: Props) {
+export default function GeoMapCanvas({ template, collection, transform, onTransformChange, mapMode, onRegionClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const panStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   const hasDragged = useRef(false);
+  const touchStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const touchHasDragged = useRef(false);
   const [photoUrls, setPhotoUrls] = useState<PhotoUrls>({});
 
   // 割り当て済みエリアの写真URLを読み込む
@@ -94,6 +97,36 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
     panStart.current = null;
   }, []);
 
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    touchStart.current = { x: touch.clientX, y: touch.clientY, tx: transform.x, ty: transform.y };
+    touchHasDragged.current = false;
+  }, [transform]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    if (!touchStart.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - touchStart.current.x;
+    const dy = touch.clientY - touchStart.current.y;
+    if (!touchHasDragged.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      touchHasDragged.current = true;
+    }
+    onTransformChange({ ...transform, x: touchStart.current.tx + dx, y: touchStart.current.ty + dy });
+  }, [transform, onTransformChange]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!touchHasDragged.current && mapMode === 'edit' && touchStart.current) {
+      const touch = e.changedTouches[0];
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      const g = el?.closest<SVGGElement>('g[data-region-id]');
+      if (g?.dataset.regionId) onRegionClick(g.dataset.regionId);
+    }
+    touchStart.current = null;
+    touchHasDragged.current = false;
+  }, [mapMode, onRegionClick]);
+
   const { canvasWidth, canvasHeight, regions } = template;
 
   return (
@@ -104,6 +137,10 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
     >
       <svg
         ref={svgRef}
@@ -134,7 +171,8 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
           return (
             <g
               key={region.id}
-              onClick={() => { if (!hasDragged.current) onRegionClick(region.id); }}
+              data-region-id={region.id}
+              onClick={() => { if (mapMode === 'edit' && !hasDragged.current) onRegionClick(region.id); }}
               onMouseEnter={() => { if (!isPanning) setHoveredRegionId(region.id); }}
               onMouseLeave={() => setHoveredRegionId(null)}
               className="cursor-pointer"

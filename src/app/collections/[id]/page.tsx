@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, Hand, MousePointer2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import GeoMapCanvas, { type Transform } from "@/components/map/GeoMapCanvas";
 import MapZoomControls from "@/components/map/MapZoomControls";
@@ -22,6 +22,7 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
   const [editingRegionId, setEditingRegionId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1 });
+  const [mapMode, setMapMode] = useState<'edit' | 'pan'>('edit');
 
   const { assignPhoto, removeAssignment } = useRegionAssignment(id);
 
@@ -101,9 +102,17 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
           collection={collection}
           transform={transform}
           onTransformChange={setTransform}
+          mapMode={mapMode}
           onRegionClick={setEditingRegionId}
         />
         <MapZoomControls transform={transform} onTransformChange={setTransform} />
+        <button
+          onClick={() => setMapMode(m => m === 'edit' ? 'pan' : 'edit')}
+          aria-label={mapMode === 'edit' ? 'パンモードに切り替え' : '編集モードに切り替え'}
+          className="absolute bottom-4 left-4 z-10 w-9 h-9 flex items-center justify-center rounded-lg bg-background/90 backdrop-blur border shadow-md hover:bg-accent transition-colors"
+        >
+          {mapMode === 'edit' ? <Hand className="w-4 h-4" /> : <MousePointer2 className="w-4 h-4" />}
+        </button>
       </div>
 
       {editingRegion && (
