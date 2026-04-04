@@ -26,6 +26,8 @@ interface PhotoUrls {
 export default function GeoMapCanvas({ template, collection, transform, onTransformChange, onRegionClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [isPanning, setIsPanning] = useState(false);
+  const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const panStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   const hasDragged = useRef(false);
   const [photoUrls, setPhotoUrls] = useState<PhotoUrls>({});
@@ -72,6 +74,8 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
   }, [transform]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     if (!isPanning || !panStart.current) return;
     const dx = e.clientX - panStart.current.x;
     const dy = e.clientY - panStart.current.y;
@@ -94,7 +98,7 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
 
   return (
     <div
-      className="w-full h-full overflow-hidden cursor-grab active:cursor-grabbing select-none"
+      className="w-full h-full overflow-hidden relative cursor-grab active:cursor-grabbing select-none"
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -131,6 +135,8 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
             <g
               key={region.id}
               onClick={() => { if (!hasDragged.current) onRegionClick(region.id); }}
+              onMouseEnter={() => { if (!isPanning) setHoveredRegionId(region.id); }}
+              onMouseLeave={() => setHoveredRegionId(null)}
               className="cursor-pointer"
             >
               {visited ? (
@@ -165,6 +171,19 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
           );
         })}
       </svg>
+
+      {hoveredRegionId && mousePos && (() => {
+        const region = regions.find(r => r.id === hoveredRegionId);
+        if (!region) return null;
+        return (
+          <div
+            className="absolute pointer-events-none z-20 px-2 py-1 rounded bg-background/90 backdrop-blur border shadow-sm text-xs font-medium text-foreground"
+            style={{ left: mousePos.x + 14, top: mousePos.y + 14 }}
+          >
+            {region.name}
+          </div>
+        );
+      })()}
     </div>
   );
 }
