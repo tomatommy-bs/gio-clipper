@@ -25,3 +25,10 @@
 #### Scenario: geo_regions テーブルの構造
 - **WHEN** マイグレーション適用後に `geo_regions` を参照する
 - **THEN** `id TEXT`, `template_id TEXT`, `name TEXT`, `name_en TEXT`, `tag_id TEXT`, `path TEXT`, `bbox JSONB`, `geo_offset JSONB` カラムが存在し、`(id, template_id)` が複合主キー、`tag_id` が `geo_tags(id)` への FK になっている
+
+### Requirement: Remote push workflow documented
+開発者はローカルの migration と seed を remote 環境に適用する手順を README から確認できる。
+
+#### Scenario: README に remote push 手順が記載されている
+- **WHEN** 開発者が README.md を参照する
+- **THEN** `supabase db push` と `pnpm seed:remote` の使い方が記載されている

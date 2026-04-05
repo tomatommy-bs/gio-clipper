@@ -6,7 +6,7 @@
 ## 2. seed.sql 生成と Git 管理
 
 - [x] 2.1 `pnpm dlx supabase db dump --local --data-only --schema public -f supabase/seed.sql` でローカルデータを dump する
-- [ ] 2.2 `supabase/seed.sql` を Git にコミットする
+- [x] 2.2 `supabase/seed.sql` を Git にコミットする
 - [x] 2.3 `package.json` に `"seed:dump"` スクリプトを追加する
 
 ## 3. Remote Seed スクリプト
