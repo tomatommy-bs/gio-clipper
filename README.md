@@ -51,6 +51,36 @@ pnpm seed
 
 詳細は [scripts/README.md](scripts/README.md) を参照。
 
+### Remote 環境へのデプロイ
+
+Vercel と Supabase の連携は設定済み。`dev` / `main` ブランチへの push で自動デプロイされる。
+
+**初回セットアップ（スキーマ + データ投入）:**
+
+```bash
+# Supabase remote プロジェクトにリンク
+pnpm dlx supabase link --project-ref <project-ref>
+
+# migration を remote に適用
+pnpm dlx supabase db push --linked
+
+# remote 用環境変数を .env.remote に取得
+pnpm dlx vercel env pull .env.remote
+
+# マスターデータを remote に投入
+pnpm seed:remote
+```
+
+**マスターデータ更新時:**
+
+```bash
+# ローカルデータを dump（seed.sql を更新）
+pnpm seed:dump
+
+# remote に再投入
+pnpm seed:remote
+```
+
 5. 開発サーバーを起動する
 
 ```bash
