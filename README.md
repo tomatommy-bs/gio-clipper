@@ -74,10 +74,8 @@ pnpm seed:remote
 **マスターデータ更新時:**
 
 ```bash
-# ローカルデータを dump（seed.sql を更新）
-pnpm seed:dump
-
-# remote に再投入
+# geo-output/ の JSON を再生成してから remote に再投入
+pnpm generate-geo   # japan-prefectures を更新する場合
 pnpm seed:remote
 ```
 
@@ -95,7 +93,7 @@ http://localhost:3000 を開く。
 |---------|------|
 | `pnpm dev` | 開発サーバー起動 |
 | `pnpm build` | プロダクションビルド |
-| `pnpm test` | ユニットテスト実行 |
+| `pnpm test --run` | ユニットテスト実行 |
 | `pnpm generate-geo [file] [--city 市名]` | GeoJSON → SVGパスデータ変換 |
 | `pnpm seed` | Supabase にテンプレートデータを投入 |
 
@@ -105,8 +103,10 @@ http://localhost:3000 を開く。
 ブラウザ
   └─ template-registry.ts
        └─ geo-template.gateway.bff.ts   # BFF API 呼び出しの窓口
-            └─ GET /api/templates/[id]  # Route Handler
-                 └─ Supabase (geo_templates / geo_regions)
+            ├─ GET /api/template-groups  # グループ一覧（ナビゲーション用）
+            └─ GET /api/templates/[id]  # テンプレート詳細（SVGパス込み）
+                 └─ Supabase (geo_templates / geo_regions /
+                              geo_template_groups / geo_template_group_members)
 ```
 
 ### テンプレート体系

@@ -203,8 +203,6 @@ export function processN03File(inputPath) {
     template: {
       id: templateId,
       name: `${prefName}（市区町村）`,
-      parentTemplateId: "japan-prefectures",
-      parentRegionId: prefCode,
       canvasWidth: CANVAS_WIDTH,
       canvasHeight: CANVAS_HEIGHT,
     },
@@ -263,18 +261,12 @@ export function processCityFile(inputPath, cityName) {
     });
   }
 
-  // 親テンプレートID: 都道府県コード（先頭2桁）から pref-XX を導出
-  const prefCode = cityCode.slice(0, 2);
-  const parentTemplateId = `pref-${prefCode.padStart(2, "0")}`;
-
   console.log(`  ${templateId} (${cityName}): ${regions.length} wards`);
 
   return {
     template: {
       id: templateId,
       name: `${cityName}（区）`,
-      parentTemplateId,
-      parentRegionId: cityCode,
       canvasWidth: CANVAS_WIDTH,
       canvasHeight: CANVAS_HEIGHT,
     },
@@ -328,8 +320,6 @@ export function processJapanPrefectures() {
     template: {
       id: "japan-prefectures",
       name: "日本全国（都道府県）",
-      parentTemplateId: null,
-      parentRegionId: null,
       canvasWidth: CANVAS_WIDTH,
       canvasHeight: CANVAS_HEIGHT,
     },

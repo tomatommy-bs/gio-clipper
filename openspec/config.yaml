@@ -1,20 +1,49 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+# <!-- CONSTITUTION-GUARD:START - Auto-generated from AGENTS.md files -->
+# Context injected into ALL artifacts
+context: |
+  Tech stack: Next.js 16 (App Router), React 19, TypeScript 6, Tailwind CSS v4, Supabase (PostgreSQL)
+  Package manager: pnpm
+  Testing: Vitest (`pnpm test --run`)
+  Linting: ESLint with Next.js config (`pnpm lint`)
+  Geo data: d3-geo, topojson-client — GeoJSON preprocessed at build time into SVG paths
+  UI: shadcn/ui components, Base UI, Lucide React icons
+  Storage: Supabase (remote DB), localStorage/IndexedDB (client-side photo data)
+  Deployment: Vercel
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  ⚠️ CRITICAL: This project uses Next.js 16, which has BREAKING CHANGES from prior versions.
+  APIs, conventions, and file structure may differ from training data.
+  Before writing any Next.js code, read the relevant guide in `node_modules/next/dist/docs/`.
+  Heed all deprecation notices encountered during development.
+
+# Per-artifact validation rules
+rules:
+  proposal:
+    - Verify the proposed approach does not rely on deprecated Next.js APIs (check node_modules/next/dist/docs/)
+    - Specify which Next.js rendering strategy is used (SSR, SSG, ISR, client-only) and justify the choice
+    - For Supabase schema changes, include a migration plan with rollback strategy
+    - Identify any client-side storage implications (localStorage / IndexedDB)
+
+  specs:
+    - Include scenarios for both online (Supabase) and offline (local storage) data paths if applicable
+    - Document geo-data handling edge cases (e.g., islands, small regions, offset display)
+    - Reference existing patterns in the codebase before proposing new ones
+    - For API routes, specify the Next.js App Router route handler conventions (not Pages Router)
+
+  design:
+    - Confirm all Next.js APIs used exist in v16 — do not rely on training data alone
+    - Canvas/SVG clipping logic must be isolated from UI components for testability
+    - Use Supabase client patterns consistent with existing `src/lib/` utilities
+    - Tailwind CSS v4 syntax may differ from v3; verify utility classes before use
+
+  tasks:
+    - Include a task to run `pnpm test --run` and confirm all tests pass before marking complete
+    - Include a task to run `pnpm lint` with zero warnings before marking complete
+    - For Supabase schema changes, include a task to apply and verify the migration locally
+    - For geo-data changes, include a task to regenerate data with `pnpm generate-geo`
+
+# Source Constitutions:
+# - AGENTS.md
+# Last Updated: 2026-04-05
+# <!-- CONSTITUTION-GUARD:END -->

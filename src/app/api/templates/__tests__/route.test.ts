@@ -25,8 +25,6 @@ describe("GET /api/templates", () => {
           {
             id: "japan-prefectures",
             name: "日本全国（都道府県）",
-            parent_template_id: null,
-            parent_region_id: null,
             canvas_width: 800,
             canvas_height: 900,
           },
@@ -41,7 +39,7 @@ describe("GET /api/templates", () => {
     expect(res.status).toBe(200);
     expect(body).toHaveLength(1);
     expect(body[0].id).toBe("japan-prefectures");
-    expect(body[0].parentTemplateId).toBeUndefined();
+    expect(body[0].canvasWidth).toBe(800);
   });
 
   it("Supabase エラー時に 500 を返す", async () => {
@@ -69,8 +67,6 @@ describe("GET /api/templates/[id]", () => {
               data: {
                 id: "japan-prefectures",
                 name: "日本全国（都道府県）",
-                parent_template_id: null,
-                parent_region_id: null,
                 canvas_width: 800,
                 canvas_height: 900,
               },

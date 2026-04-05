@@ -74,8 +74,6 @@ pnpm generate-geo scripts/geo-source/N03_14.geojson --city 横浜市
   "template": {
     "id": "pref-13",
     "name": "東京都（市区町村）",
-    "parentTemplateId": "japan-prefectures",
-    "parentRegionId": "13",
     "canvasWidth": 800,
     "canvasHeight": 900
   },
@@ -97,7 +95,7 @@ pnpm generate-geo scripts/geo-source/N03_14.geojson --city 横浜市
 
 ## seed-supabase.mjs
 
-`geo-output/` の JSON を Supabase の `geo_templates` / `geo_regions` テーブルに UPSERT する。冪等（何度実行しても同じ結果になる）。
+`geo-output/` の JSON を Supabase の `geo_templates` / `geo_regions` テーブルに投入し、さらに `geo_template_groups` / `geo_template_group_members` にグループデータを投入する。冪等（何度実行しても同じ結果になる）。
 
 ### Usage
 
@@ -116,8 +114,12 @@ pnpm seed
 ### 処理内容
 
 1. `geo-output/*.json` を読み込み、`japan-*` → `pref-*` → `city-*` の順に処理する（FK 制約のため）
-2. `geo_templates` に `ON CONFLICT (id) DO UPDATE` で UPSERT する
-3. `geo_regions` に `ON CONFLICT (id, template_id) DO UPDATE` で UPSERT する（500件ずつバッチ処理）
+2. `geo_templates` に `ON CONFLICT DO NOTHING` で INSERT する（既存行はスキップ）
+3. `geo_regions` に `ON CONFLICT DO NOTHING` で INSERT する（500件ずつバッチ処理。SVGパスが巨大なため再書き込みを避ける）
+4. `geo_template_groups` にグループ定義（7地方区分）を UPSERT する
+5. `geo_template_group_members` にグループメンバー（都道府県 + 市区）を UPSERT する
+
+> **注意:** テンプレートデータを再生成した場合は `supabase db reset` → `pnpm seed` の順で全件を再投入すること（`ON CONFLICT DO NOTHING` のため差分更新は行われない）。
 
 ---
 
@@ -131,12 +133,14 @@ pnpm dlx supabase start
 #    https://nlftp.mlit.go.jp/ksj/ からダウンロード → scripts/geo-source/N03_XX.geojson
 
 # 3. SVGパスデータを生成
-pnpm generate-geo                                               # japan-prefectures
+pnpm generate-geo                                               # japan-prefectures（必須・引数なし）
 pnpm generate-geo scripts/geo-source/N03_13.geojson            # 東京都（市区町村）
 pnpm generate-geo scripts/geo-source/N03_14.geojson            # 神奈川県（市区町村）
 pnpm generate-geo scripts/geo-source/N03_14.geojson --city 横浜市  # 横浜市（区）
 pnpm generate-geo scripts/geo-source/N03_14.geojson --city 川崎市  # 川崎市（区）
 
-# 4. Supabase に投入
+# 4. Supabase に投入（テンプレート + グループ）
 pnpm seed
 ```
+
+> `japan-prefectures.json` は `pnpm generate-geo`（引数なし）でのみ生成される。`geo-output/` が空の状態や `supabase db reset` 後は必ず先に実行すること。

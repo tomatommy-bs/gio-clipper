@@ -10,7 +10,7 @@ export async function GET(
 
   const { data: templateRow, error: templateError } = await supabase
     .from("geo_templates")
-    .select("id, name, parent_template_id, parent_region_id, canvas_width, canvas_height")
+    .select("id, name, canvas_width, canvas_height")
     .eq("id", id)
     .single();
 
@@ -40,8 +40,6 @@ export async function GET(
   const template: GeoTemplate = {
     id: templateRow.id,
     name: templateRow.name,
-    parentTemplateId: templateRow.parent_template_id ?? undefined,
-    parentRegionId: templateRow.parent_region_id ?? undefined,
     canvasWidth: templateRow.canvas_width,
     canvasHeight: templateRow.canvas_height,
     regions,

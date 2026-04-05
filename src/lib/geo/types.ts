@@ -19,10 +19,6 @@ export interface GeoRegion {
 export interface GeoTemplateInfo {
   id: string;
   name: string;
-  /** 親テンプレートID（都道府県レベルテンプレートの場合） */
-  parentTemplateId?: string;
-  /** 親テンプレート内の対応リージョンID */
-  parentRegionId?: string;
   canvasWidth: number;
   canvasHeight: number;
 }
@@ -30,6 +26,14 @@ export interface GeoTemplateInfo {
 /** fetch 後に使えるテンプレート（全データ含む） */
 export interface GeoTemplate extends GeoTemplateInfo {
   regions: GeoRegion[];
+}
+
+/** テンプレートグループ（グループ内テンプレートは sort_order 昇順） */
+export interface GeoTemplateGroup {
+  id: string;
+  name: string;
+  sortOrder: number;
+  templates: (GeoTemplateInfo & { sortOrder: number })[];
 }
 
 /** 正規化済みパス（0〜1 unit 座標系） */
