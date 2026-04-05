@@ -93,7 +93,7 @@ export default function HomePage() {
           <DialogHeader>
             <DialogTitle>コレクションを作成</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 py-2">
+          <div className="space-y-2 py-2 max-h-[60vh] overflow-y-auto">
             {templates.map((t) => (
               <button
                 key={t.id}
