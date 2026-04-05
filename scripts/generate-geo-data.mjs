@@ -4,6 +4,7 @@
  * Usage:
  *   node scripts/generate-geo-data.mjs <file.geojson>
  *   node scripts/generate-geo-data.mjs <directory/>
+ *   node scripts/generate-geo-data.mjs <file.geojson> --city <市名>
  *
  * 出力先: scripts/geo-output/<templateId>.json
  */
@@ -212,6 +213,76 @@ export function processN03File(inputPath) {
 }
 
 // -----------------------------------------------------------------------
+// 政令市テンプレート処理
+// -----------------------------------------------------------------------
+
+/**
+ * N03 GeoJSON から特定の政令市の区テンプレートを生成する
+ * テンプレート ID は ward コードの先頭3桁 + "00"（例: "14101" → "city-14100"）
+ */
+export function processCityFile(inputPath, cityName) {
+  const geojson = JSON.parse(fs.readFileSync(inputPath, "utf-8"));
+
+  const cityFeatures = geojson.features.filter(
+    (f) => f.properties?.N03_003 === cityName
+  );
+
+  if (cityFeatures.length === 0) {
+    throw new Error(`City not found in GeoJSON: "${cityName}"`);
+  }
+
+  const dissolved = dissolveByCode(cityFeatures);
+
+  // ward コードの最小値 - 1 で市コードを導出（例: 14131→14130）
+  const wardCodes = dissolved.map((d) => parseInt(d.code)).filter(Boolean);
+  const cityCode = String(Math.min(...wardCodes) - 1);
+  const templateId = `city-${cityCode}`;
+
+  const projection = geoMercator().fitExtent(
+    [[10, 10], [CANVAS_WIDTH - 10, CANVAS_HEIGHT - 10]],
+    { type: "FeatureCollection", features: cityFeatures }
+  );
+  const pathGenerator = geoPath().projection(projection);
+
+  const regions = [];
+  for (const { code, props, geometry } of dissolved) {
+    const rawPath = pathGenerator({ type: "Feature", geometry, properties: {} });
+    if (!rawPath) {
+      console.warn(`[warn] empty path for code ${code}`);
+      continue;
+    }
+    const bbox = computeBbox(rawPath);
+    regions.push({
+      id: code,
+      name: props.city ?? "",
+      nameEn: "",
+      tag: "municipality",
+      path: rawPath,
+      bbox,
+      offset: { dx: 0, dy: 0 },
+    });
+  }
+
+  // 親テンプレートID: 都道府県コード（先頭2桁）から pref-XX を導出
+  const prefCode = cityCode.slice(0, 2);
+  const parentTemplateId = `pref-${prefCode.padStart(2, "0")}`;
+
+  console.log(`  ${templateId} (${cityName}): ${regions.length} wards`);
+
+  return {
+    template: {
+      id: templateId,
+      name: `${cityName}（区）`,
+      parentTemplateId,
+      parentRegionId: cityCode,
+      canvasWidth: CANVAS_WIDTH,
+      canvasHeight: CANVAS_HEIGHT,
+    },
+    regions,
+  };
+}
+
+// -----------------------------------------------------------------------
 // japan-prefectures 処理（既存フォーマット）
 // -----------------------------------------------------------------------
 
@@ -294,7 +365,14 @@ function main() {
     return;
   }
 
-  const target = path.resolve(args[0]);
+  // --city <市名> オプションの解析
+  const cityFlagIdx = args.indexOf("--city");
+  const cityName = cityFlagIdx !== -1 ? args[cityFlagIdx + 1] : null;
+  const fileArgs = cityFlagIdx !== -1
+    ? args.filter((a, i) => i !== cityFlagIdx && i !== cityFlagIdx + 1)
+    : args;
+
+  const target = path.resolve(fileArgs[0]);
   const stat = fs.statSync(target);
 
   const files = stat.isDirectory()
@@ -303,11 +381,13 @@ function main() {
         .map((f) => path.join(target, f))
     : [target];
 
-  console.log(`Processing ${files.length} file(s)...`);
+  console.log(`Processing ${files.length} file(s)${cityName ? ` (city: ${cityName})` : ""}...`);
 
   for (const file of files) {
     try {
-      const result = processN03File(file);
+      const result = cityName
+        ? processCityFile(file, cityName)
+        : processN03File(file);
       const out = writeOutput(result, outputDir);
       console.log(`✓ Written: ${out}`);
     } catch (err) {

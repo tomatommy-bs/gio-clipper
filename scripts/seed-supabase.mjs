@@ -83,7 +83,13 @@ async function main() {
     process.exit(1);
   }
 
-  const files = fs.readdirSync(GEO_OUTPUT_DIR).filter((f) => f.endsWith(".json"));
+  // 親テンプレートを先に処理: japan-* → pref-* → city-* の順
+  const files = fs.readdirSync(GEO_OUTPUT_DIR)
+    .filter((f) => f.endsWith(".json"))
+    .sort((a, b) => {
+      const order = (f) => f.startsWith("japan-") ? 0 : f.startsWith("pref-") ? 1 : 2;
+      return order(a) - order(b) || a.localeCompare(b);
+    });
   if (files.length === 0) {
     console.error("No JSON files found in geo-output/. Run `pnpm generate-geo` first.");
     process.exit(1);
