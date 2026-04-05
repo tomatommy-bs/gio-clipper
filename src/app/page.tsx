@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Map, Trash2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useCollections } from "@/lib/hooks/use-collections";
-import { TEMPLATE_REGISTRY } from "@/lib/geo/template-registry";
+import { listTemplates } from "@/lib/geo/template-registry";
+import type { GeoTemplateInfo } from "@/lib/geo/types";
 import { useRouter } from "next/navigation";
 
 export default function HomePage() {
@@ -14,10 +15,15 @@ export default function HomePage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<GeoTemplateInfo[]>([]);
+
+  useEffect(() => {
+    listTemplates().then(setTemplates).catch(console.error);
+  }, []);
 
   function handleCreate() {
     if (!selectedTemplateId) return;
-    const info = TEMPLATE_REGISTRY.find((t) => t.id === selectedTemplateId);
+    const info = templates.find((t) => t.id === selectedTemplateId);
     if (!info) return;
     const col = createCollection(selectedTemplateId, info.name);
     setCreateOpen(false);
@@ -50,9 +56,7 @@ export default function HomePage() {
         ) : (
           <ul className="space-y-3">
             {collections.map((col) => {
-              const info = TEMPLATE_REGISTRY.find((t) => t.id === col.templateId);
               const visitedCount = Object.keys(col.assignments).length;
-              const totalCount = info?.regionCount ?? 0;
               return (
                 <li key={col.id} className="border rounded-lg bg-card hover:bg-accent/50 transition-colors">
                   <button
@@ -62,14 +66,8 @@ export default function HomePage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{col.name}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {visitedCount} / {totalCount} エリア訪問済み
+                        {visitedCount} エリア訪問済み
                       </p>
-                      <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden w-40">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all"
-                          style={{ width: totalCount ? `${(visitedCount / totalCount) * 100}%` : "0%" }}
-                        />
-                      </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <button
@@ -96,7 +94,7 @@ export default function HomePage() {
             <DialogTitle>コレクションを作成</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-2">
-            {TEMPLATE_REGISTRY.map((t) => (
+            {templates.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setSelectedTemplateId(t.id)}
@@ -106,8 +104,7 @@ export default function HomePage() {
                     : "border-border hover:bg-accent/50"
                 }`}
               >
-                <span>{t.name}</span>
-                <span className="ml-2 text-xs text-muted-foreground">{t.regionCount} エリア</span>
+                {t.name}
               </button>
             ))}
           </div>
