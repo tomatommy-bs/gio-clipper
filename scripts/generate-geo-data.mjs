@@ -1,195 +1,139 @@
 /**
- * GeoJSON → SVGパス変換スクリプト
- * 日本の行政区画GeoJSONをSVGパス文字列とbounding boxのJSONに変換する
+ * GeoJSON → SVGパス変換スクリプト（N03 汎用版）
  *
- * Usage: node scripts/generate-geo-data.mjs
+ * Usage:
+ *   node scripts/generate-geo-data.mjs <file.geojson>
+ *   node scripts/generate-geo-data.mjs <directory/>
+ *
+ * 出力先: scripts/geo-output/<templateId>.json
  */
 
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { geoMercator, geoPath } from "d3-geo";
+import { topology } from "topojson-server";
+import { merge } from "topojson-client";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 
-// -----------------------------------------------------------------------
-// 設定
-// -----------------------------------------------------------------------
-
-/** 出力先SVGのキャンバスサイズ */
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 900;
 
-/**
- * 離島オフセット設定
- * 本土から遠い島を天気予報風にずらして表示する
- * key: GeoJSON の id プロパティ
- * value: [dx, dy] ピクセル単位のオフセット量（正規化前の投影座標ではなくキャンバス座標）
- */
-const ISLAND_OFFSETS = {
-  47: { dx: 160, dy: -340 }, // 沖縄県: 本来の位置から北東にずらす
-};
-
 // -----------------------------------------------------------------------
-// メイン処理
+// N03 パーサー
 // -----------------------------------------------------------------------
 
-function main() {
-  const geojsonPath = path.join(
-    ROOT,
-    "scripts/geo-source/japan-prefectures.geojson"
-  );
-  const outputDir = path.join(ROOT, "public/geo-data");
-  const outputPath = path.join(outputDir, "japan-prefectures.json");
-
-  const geojson = JSON.parse(fs.readFileSync(geojsonPath, "utf-8"));
-
-  // メルカトル投影を設定（日本全体が収まるようにfitExtentで自動スケール）
-  const projection = geoMercator().fitExtent(
-    [
-      [10, 10],
-      [CANVAS_WIDTH - 10, CANVAS_HEIGHT - 10],
-    ],
-    geojson
-  );
-
-  const pathGenerator = geoPath().projection(projection);
-
-  const regions = geojson.features.map((feature) => {
-    const id = feature.properties.id;
-    const offset = ISLAND_OFFSETS[id] ?? { dx: 0, dy: 0 };
-
-    // SVGパス文字列を生成
-    const rawPath = pathGenerator(feature);
-    if (!rawPath) {
-      console.warn(`Warning: empty path for ${feature.properties.nam_ja}`);
-      return null;
-    }
-
-    // オフセットを適用したパスに変換
-    const svgPath = applyOffset(rawPath, offset.dx, offset.dy);
-
-    // bounding boxを計算（オフセット後）
-    const bbox = computeBbox(svgPath);
-
-    return {
-      id: String(id),
-      name: feature.properties.nam_ja,
-      nameEn: feature.properties.nam,
-      path: svgPath,
-      bbox,
-      offset: { dx: offset.dx, dy: offset.dy },
-    };
-  }).filter(Boolean);
-
-  // 出力ディレクトリを作成
-  fs.mkdirSync(outputDir, { recursive: true });
-
-  const output = {
-    canvasWidth: CANVAS_WIDTH,
-    canvasHeight: CANVAS_HEIGHT,
-    regions,
+/** N03 プロパティを読み取る */
+export function parseN03Props(feature) {
+  const p = feature.properties ?? {};
+  return {
+    code: p.N03_007 ?? null,
+    pref: p.N03_001 ?? null,
+    district: p.N03_003 ?? null,
+    city: p.N03_004 ?? null,
   };
+}
 
-  fs.writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
+/**
+ * N03_003 + N03_004 を結合して name を生成する
+ *
+ * - N03_003 が null → name = N03_004（一般市）
+ * - N03_003 が存在 → name = N03_003 + N03_004（政令市区・郡部）
+ * - N03_004 も null → name = N03_001（都道府県テンプレート）
+ */
+export function buildNameFromN03({ pref, district, city }) {
+  if (!city) return pref ?? "";
+  if (!district) return city;
+  return district + city;
+}
 
-  console.log(`✓ Generated ${regions.length} prefectures → ${outputPath}`);
-  console.log(`  Canvas: ${CANVAS_WIDTH}x${CANVAS_HEIGHT}`);
-  console.log(
-    `  Offsets applied: ${
-      Object.keys(ISLAND_OFFSETS)
-        .map((id) => regions.find((r) => r?.id === id)?.name)
-        .filter(Boolean)
-        .join(", ") || "none"
-    }`
-  );
+/**
+ * N03_004 の有無から tag を生成する
+ *
+ * - N03_004 あり → 'municipality'（市区町村）
+ * - N03_004 なし → 'prefecture'（都道府県）
+ */
+export function buildTagFromN03({ city }) {
+  return city ? "municipality" : "prefecture";
 }
 
 // -----------------------------------------------------------------------
-// ユーティリティ
+// Dissolve
 // -----------------------------------------------------------------------
 
 /**
- * SVGパス文字列の全座標にオフセットを加算する
- * translate変換を使わずにパス座標を直接シフトする
+ * 同一 N03_007 コードのフィーチャーを dissolve して1エントリにまとめる
+ * N03_007 が null のフィーチャーはスキップしてログ出力する
  */
-function applyOffset(pathStr, dx, dy) {
+export function dissolveByCode(features) {
+  const groups = {};
+
+  for (const f of features) {
+    const code = f.properties?.N03_007 ?? null;
+    if (!code) {
+      const name = f.properties?.N03_004 ?? f.properties?.N03_001 ?? "(unknown)";
+      console.warn(`[skip] N03_007 is null — ${name}`);
+      continue;
+    }
+    if (!groups[code]) groups[code] = [];
+    groups[code].push(f);
+  }
+
+  const results = [];
+  for (const [code, feats] of Object.entries(groups)) {
+    const topo = topology({ g: { type: "FeatureCollection", features: feats } });
+    const mergedGeometry = merge(topo, topo.objects.g.geometries);
+    const props = parseN03Props(feats[0]);
+    results.push({ code, props, geometry: mergedGeometry });
+  }
+
+  return results;
+}
+
+// -----------------------------------------------------------------------
+// SVG ユーティリティ
+// -----------------------------------------------------------------------
+
+/** SVGパス文字列の全座標にオフセットを加算する */
+export function applyOffset(pathStr, dx, dy) {
   if (dx === 0 && dy === 0) return pathStr;
 
-  // SVGパスコマンドを解析して座標にオフセットを加算
-  // 絶対座標コマンド (M, L, C, Q, A, Z) のみを対象とする
-  return pathStr.replace(
-    /([MLHVCSQTAZ])([^MLHVCSQTAZ]*)/gi,
-    (match, cmd, args) => {
-      const upper = cmd.toUpperCase();
+  return pathStr.replace(/([MLHVCSQTAZ])([^MLHVCSQTAZ]*)/gi, (match, cmd, args) => {
+    const upper = cmd.toUpperCase();
+    if (upper === "Z") return cmd;
 
-      if (upper === "Z") return cmd;
+    const nums = parseNums(args);
 
-      if (upper === "H") {
-        // 水平線: x座標のみ
-        const nums = parseNums(args);
-        return cmd + nums.map((n) => round(n + dx)).join(",");
-      }
-      if (upper === "V") {
-        // 垂直線: y座標のみ
-        const nums = parseNums(args);
-        return cmd + nums.map((n) => round(n + dy)).join(",");
-      }
+    if (upper === "H") return cmd + nums.map((n) => round(n + dx)).join(",");
+    if (upper === "V") return cmd + nums.map((n) => round(n + dy)).join(",");
 
-      // その他のコマンド: 座標ペアとして処理
-      const nums = parseNums(args);
-      const shifted = nums.map((n, i) =>
-        i % 2 === 0 ? round(n + dx) : round(n + dy)
-      );
-      return cmd + shifted.join(",");
-    }
-  );
+    const shifted = nums.map((n, i) => (i % 2 === 0 ? round(n + dx) : round(n + dy)));
+    return cmd + shifted.join(",");
+  });
 }
 
-function parseNums(str) {
-  return (str.match(/-?\d+\.?\d*/g) || []).map(Number);
-}
-
-function round(n) {
-  return Math.round(n * 100) / 100;
-}
-
-/**
- * SVGパス文字列のbounding boxを近似計算する
- * (パス内の全座標の最小・最大値を使う簡易実装)
- */
-function computeBbox(pathStr) {
+/** SVGパス文字列の bounding box を計算する */
+export function computeBbox(pathStr) {
   const xs = [];
   const ys = [];
 
   pathStr.replace(/([MLHVCSQTAZ])([^MLHVCSQTAZ]*)/gi, (_, cmd, args) => {
     const upper = cmd.toUpperCase();
     if (upper === "Z") return;
-
     const values = parseNums(args);
-
-    if (upper === "H") {
-      values.forEach((v) => xs.push(v));
-    } else if (upper === "V") {
-      values.forEach((v) => ys.push(v));
-    } else {
-      values.forEach((v, i) => {
-        if (i % 2 === 0) xs.push(v);
-        else ys.push(v);
-      });
-    }
+    if (upper === "H") values.forEach((v) => xs.push(v));
+    else if (upper === "V") values.forEach((v) => ys.push(v));
+    else values.forEach((v, i) => (i % 2 === 0 ? xs.push(v) : ys.push(v)));
   });
 
-  if (xs.length === 0 || ys.length === 0) {
-    return { x: 0, y: 0, width: 0, height: 0 };
-  }
+  if (xs.length === 0 || ys.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
 
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const maxX = Math.max(...xs);
-  const maxY = Math.max(...ys);
-
+  const minX = xs.reduce((a, b) => Math.min(a, b), Infinity);
+  const maxX = xs.reduce((a, b) => Math.max(a, b), -Infinity);
+  const minY = ys.reduce((a, b) => Math.min(a, b), Infinity);
+  const maxY = ys.reduce((a, b) => Math.max(a, b), -Infinity);
   return {
     x: round(minX),
     y: round(minY),
@@ -198,50 +142,181 @@ function computeBbox(pathStr) {
   };
 }
 
-function generateTokyoWards() {
-  const geojsonPath = path.join(ROOT, "scripts/geo-source/tokyo-wards.geojson");
-  const outputDir = path.join(ROOT, "public/geo-data");
-  const outputPath = path.join(outputDir, "tokyo-wards.json");
+function parseNums(str) {
+  return (str.match(/-?\d+\.?\d*/g) ?? []).map(Number);
+}
 
-  const geojson = JSON.parse(fs.readFileSync(geojsonPath, "utf-8"));
+function round(n) {
+  return Math.round(n * 100) / 100;
+}
 
-  // 23特別区のみ抽出
-  const filtered = {
-    ...geojson,
-    features: geojson.features.filter(
-      (f) => f.properties.area_ja === "都区部"
-    ),
-  };
+// -----------------------------------------------------------------------
+// N03 ファイル処理
+// -----------------------------------------------------------------------
+
+/**
+ * N03 GeoJSON ファイルを処理して pref-XX テンプレート JSON を生成する
+ * ファイル名は N03_XX.geojson 形式（XX = 2桁の都道府県コード）
+ */
+export function processN03File(inputPath) {
+  const filename = path.basename(inputPath, ".geojson");
+  const match = filename.match(/N03_0*(\d+)/);
+  if (!match) throw new Error(`Invalid filename: ${filename} (expected N03_XX.geojson)`);
+
+  const prefCode = match[1].padStart(2, "0");
+  const templateId = `pref-${prefCode}`;
+
+  const geojson = JSON.parse(fs.readFileSync(inputPath, "utf-8"));
+  const dissolved = dissolveByCode(geojson.features);
+
+  const prefName = geojson.features[0]?.properties?.N03_001 ?? "";
 
   const projection = geoMercator().fitExtent(
-    [
-      [10, 10],
-      [CANVAS_WIDTH - 10, CANVAS_HEIGHT - 10],
-    ],
-    filtered
+    [[10, 10], [CANVAS_WIDTH - 10, CANVAS_HEIGHT - 10]],
+    geojson
   );
   const pathGenerator = geoPath().projection(projection);
 
-  const regions = filtered.features.map((feature) => {
-    const code = String(feature.properties.code);
-    const rawPath = pathGenerator(feature);
-    if (!rawPath) return null;
+  const regions = [];
+  for (const { code, props, geometry } of dissolved) {
+    const rawPath = pathGenerator({ type: "Feature", geometry, properties: {} });
+    if (!rawPath) {
+      console.warn(`[warn] empty path for code ${code}`);
+      continue;
+    }
     const bbox = computeBbox(rawPath);
-    return {
+    regions.push({
       id: code,
-      name: feature.properties.ward_ja,
-      nameEn: feature.properties.ward_en,
+      name: buildNameFromN03(props),
+      nameEn: "",
+      tag: buildTagFromN03(props),
       path: rawPath,
       bbox,
       offset: { dx: 0, dy: 0 },
-    };
-  }).filter(Boolean);
+    });
+  }
 
-  fs.mkdirSync(outputDir, { recursive: true });
-  const output = { canvasWidth: CANVAS_WIDTH, canvasHeight: CANVAS_HEIGHT, regions };
-  fs.writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
-  console.log(`✓ Generated ${regions.length} Tokyo wards → ${outputPath}`);
+  console.log(`  ${templateId}: ${regions.length} regions (${dissolved.length} codes)`);
+
+  return {
+    template: {
+      id: templateId,
+      name: `${prefName}（市区町村）`,
+      parentTemplateId: "japan-prefectures",
+      parentRegionId: prefCode,
+      canvasWidth: CANVAS_WIDTH,
+      canvasHeight: CANVAS_HEIGHT,
+    },
+    regions,
+  };
 }
 
-main();
-generateTokyoWards();
+// -----------------------------------------------------------------------
+// japan-prefectures 処理（既存フォーマット）
+// -----------------------------------------------------------------------
+
+const ISLAND_OFFSETS = {
+  47: { dx: 160, dy: -340 },
+};
+
+export function processJapanPrefectures() {
+  const geojsonPath = path.join(ROOT, "scripts/geo-source/japan-prefectures.geojson");
+  const geojson = JSON.parse(fs.readFileSync(geojsonPath, "utf-8"));
+
+  const projection = geoMercator().fitExtent(
+    [[10, 10], [CANVAS_WIDTH - 10, CANVAS_HEIGHT - 10]],
+    geojson
+  );
+  const pathGenerator = geoPath().projection(projection);
+
+  const regions = geojson.features
+    .map((feature) => {
+      const id = feature.properties.id;
+      const offset = ISLAND_OFFSETS[id] ?? { dx: 0, dy: 0 };
+      const rawPath = pathGenerator(feature);
+      if (!rawPath) {
+        console.warn(`[warn] empty path for ${feature.properties.nam_ja}`);
+        return null;
+      }
+      const svgPath = applyOffset(rawPath, offset.dx, offset.dy);
+      return {
+        id: String(id),
+        name: feature.properties.nam_ja,
+        nameEn: feature.properties.nam,
+        tag: "prefecture",
+        path: svgPath,
+        bbox: computeBbox(svgPath),
+        offset,
+      };
+    })
+    .filter(Boolean);
+
+  console.log(`  japan-prefectures: ${regions.length} regions`);
+
+  return {
+    template: {
+      id: "japan-prefectures",
+      name: "日本全国（都道府県）",
+      parentTemplateId: null,
+      parentRegionId: null,
+      canvasWidth: CANVAS_WIDTH,
+      canvasHeight: CANVAS_HEIGHT,
+    },
+    regions,
+  };
+}
+
+// -----------------------------------------------------------------------
+// 出力
+// -----------------------------------------------------------------------
+
+function writeOutput(result, outputDir) {
+  fs.mkdirSync(outputDir, { recursive: true });
+  const outputPath = path.join(outputDir, `${result.template.id}.json`);
+  fs.writeFileSync(outputPath, JSON.stringify(result, null, 2), "utf-8");
+  return outputPath;
+}
+
+// -----------------------------------------------------------------------
+// CLI エントリポイント
+// -----------------------------------------------------------------------
+
+function main() {
+  const args = process.argv.slice(2);
+  const outputDir = path.join(ROOT, "scripts/geo-output");
+
+  if (args.length === 0) {
+    // 引数なし: japan-prefectures のみ生成
+    console.log("Generating japan-prefectures...");
+    const result = processJapanPrefectures();
+    const out = writeOutput(result, outputDir);
+    console.log(`✓ Written: ${out}`);
+    return;
+  }
+
+  const target = path.resolve(args[0]);
+  const stat = fs.statSync(target);
+
+  const files = stat.isDirectory()
+    ? fs.readdirSync(target)
+        .filter((f) => f.endsWith(".geojson"))
+        .map((f) => path.join(target, f))
+    : [target];
+
+  console.log(`Processing ${files.length} file(s)...`);
+
+  for (const file of files) {
+    try {
+      const result = processN03File(file);
+      const out = writeOutput(result, outputDir);
+      console.log(`✓ Written: ${out}`);
+    } catch (err) {
+      console.error(`✗ Failed: ${file} — ${err.message}`);
+    }
+  }
+}
+
+// スクリプトとして直接実行された場合のみ main() を呼ぶ
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}

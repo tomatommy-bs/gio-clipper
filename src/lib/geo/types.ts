@@ -1,8 +1,12 @@
+/** 行政区画の粒度タグ */
+export type GeoRegionTag = "prefecture" | "municipality";
+
 /** 1つの行政区画エリア */
 export interface GeoRegion {
   id: string;
   name: string;
   nameEn: string;
+  tag: GeoRegionTag;
   /** d3-geo で生成した SVG path 文字列（キャンバス座標系） */
   path: string;
   /** キャンバス座標系での bounding box */
@@ -11,22 +15,20 @@ export interface GeoRegion {
   offset: { dx: number; dy: number };
 }
 
-/** テンプレートのメタデータ（fetch 前に使える情報） */
+/** テンプレートのメタデータ（regions を含まない一覧用） */
 export interface GeoTemplateInfo {
   id: string;
   name: string;
-  /** 親テンプレートID（都道府県テンプレートの場合、対応する都道府県ID） */
-  parentId?: string;
-  /** 含まれるエリア数 */
-  regionCount: number;
-  /** geo-data/ 以下の JSON ファイル名 */
-  dataFile: string;
+  /** 親テンプレートID（都道府県レベルテンプレートの場合） */
+  parentTemplateId?: string;
+  /** 親テンプレート内の対応リージョンID */
+  parentRegionId?: string;
+  canvasWidth: number;
+  canvasHeight: number;
 }
 
 /** fetch 後に使えるテンプレート（全データ含む） */
 export interface GeoTemplate extends GeoTemplateInfo {
-  canvasWidth: number;
-  canvasHeight: number;
   regions: GeoRegion[];
 }
 
