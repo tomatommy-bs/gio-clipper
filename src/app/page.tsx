@@ -97,7 +97,7 @@ export default function HomePage() {
             <DialogTitle>コレクションを作成</DialogTitle>
           </DialogHeader>
           <div className="py-2 max-h-[60vh] overflow-y-auto">
-            <Accordion type="multiple" className="w-full">
+            <Accordion multiple className="w-full">
               {groups.map((group) => (
                 <AccordionItem key={group.id} value={group.id}>
                   <AccordionTrigger className="text-sm font-medium">
