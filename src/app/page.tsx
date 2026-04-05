@@ -4,9 +4,9 @@ import { useState, useEffect } from "react";
 import { Plus, Map, Trash2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useCollections } from "@/lib/hooks/use-collections";
-import { listTemplates } from "@/lib/geo/template-registry";
-import type { GeoTemplateInfo } from "@/lib/geo/types";
+import type { GeoTemplateGroup } from "@/lib/geo/types";
 import { useRouter } from "next/navigation";
 
 export default function HomePage() {
@@ -15,15 +15,18 @@ export default function HomePage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [templates, setTemplates] = useState<GeoTemplateInfo[]>([]);
+  const [groups, setGroups] = useState<GeoTemplateGroup[]>([]);
 
   useEffect(() => {
-    listTemplates().then(setTemplates).catch(console.error);
+    fetch("/api/template-groups")
+      .then((res) => res.json())
+      .then((data: GeoTemplateGroup[]) => setGroups(data))
+      .catch(console.error);
   }, []);
 
   function handleCreate() {
     if (!selectedTemplateId) return;
-    const info = templates.find((t) => t.id === selectedTemplateId);
+    const info = groups.flatMap((g) => g.templates).find((t) => t.id === selectedTemplateId);
     if (!info) return;
     const col = createCollection(selectedTemplateId, info.name);
     setCreateOpen(false);
@@ -93,20 +96,33 @@ export default function HomePage() {
           <DialogHeader>
             <DialogTitle>コレクションを作成</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 py-2 max-h-[60vh] overflow-y-auto">
-            {templates.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setSelectedTemplateId(t.id)}
-                className={`w-full text-left px-4 py-3 rounded-lg border text-sm transition-colors ${
-                  selectedTemplateId === t.id
-                    ? "border-primary bg-primary/5 font-medium"
-                    : "border-border hover:bg-accent/50"
-                }`}
-              >
-                {t.name}
-              </button>
-            ))}
+          <div className="py-2 max-h-[60vh] overflow-y-auto">
+            <Accordion type="multiple" className="w-full">
+              {groups.map((group) => (
+                <AccordionItem key={group.id} value={group.id}>
+                  <AccordionTrigger className="text-sm font-medium">
+                    {group.name}
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="space-y-1 pt-1">
+                      {group.templates.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => setSelectedTemplateId(t.id)}
+                          className={`w-full text-left px-4 py-3 rounded-lg border text-sm transition-colors ${
+                            selectedTemplateId === t.id
+                              ? "border-primary bg-primary/5 font-medium"
+                              : "border-border hover:bg-accent/50"
+                          }`}
+                        >
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>キャンセル</Button>
