@@ -246,8 +246,8 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
                 <g clipPath={`url(#clip-${region.id})`}>
                   <image
                     href={photoUrl}
-                    x={cx - (Math.max(width, height) * assignment.photoSettings.scale) / 2 + assignment.photoSettings.offsetX}
-                    y={cy - (Math.max(width, height) * assignment.photoSettings.scale) / 2 + assignment.photoSettings.offsetY}
+                    x={cx - (Math.max(width, height) * assignment.photoSettings.scale) / 2 + assignment.photoSettings.offsetX * (Math.max(width, height) * assignment.photoSettings.scale)}
+                    y={cy - (Math.max(width, height) * assignment.photoSettings.scale) / 2 + assignment.photoSettings.offsetY * (Math.max(width, height) * assignment.photoSettings.scale)}
                     width={Math.max(width, height) * assignment.photoSettings.scale}
                     height={Math.max(width, height) * assignment.photoSettings.scale}
                     preserveAspectRatio="xMidYMid slice"
