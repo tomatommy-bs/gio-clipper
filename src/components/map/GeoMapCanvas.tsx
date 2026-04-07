@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
 import type { GeoTemplate } from "@/lib/geo/types";
 import type { Collection } from "@/lib/storage/types";
 import { getPhotoUrl } from "@/lib/storage/photo-db";
@@ -24,8 +24,15 @@ interface PhotoUrls {
   [regionId: string]: string;
 }
 
+function getTouchDist(touches: TouchList): number {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 export default function GeoMapCanvas({ template, collection, transform, onTransformChange, mapMode, onRegionClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null); // 1.1
   const [isPanning, setIsPanning] = useState(false);
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
@@ -33,7 +40,20 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
   const hasDragged = useRef(false);
   const touchStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   const touchHasDragged = useRef(false);
+  const pinchStart = useRef<{ dist: number; scale: number } | null>(null); // 1.5
   const [photoUrls, setPhotoUrls] = useState<PhotoUrls>({});
+
+  // 最新の transform / callback を ref で保持してタッチハンドラから参照する
+  const transformRef = useRef(transform);
+  const onTransformChangeRef = useRef(onTransformChange);
+  const mapModeRef = useRef(mapMode);
+  const onRegionClickRef = useRef(onRegionClick);
+  useLayoutEffect(() => {
+    transformRef.current = transform;
+    onTransformChangeRef.current = onTransformChange;
+    mapModeRef.current = mapMode;
+    onRegionClickRef.current = onRegionClick;
+  });
 
   // 割り当て済みエリアの写真URLを読み込む
   useEffect(() => {
@@ -57,6 +77,83 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
       Object.values(urls).forEach((u) => URL.revokeObjectURL(u));
     };
   }, [collection]);
+
+  // ネイティブタッチイベント登録 (passive: false でブラウザズームを抑制) — 1.2, 1.3
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    function handleTouchStart(e: TouchEvent) {
+      const t = transformRef.current;
+      if (e.touches.length === 1) {
+        // 1本指パン開始
+        const touch = e.touches[0];
+        touchStart.current = { x: touch.clientX, y: touch.clientY, tx: t.x, ty: t.y };
+        touchHasDragged.current = false;
+        pinchStart.current = null;
+      } else if (e.touches.length === 2) {
+        // 2本指ピンチ開始 — 1.5
+        pinchStart.current = { dist: getTouchDist(e.touches), scale: t.scale };
+        touchStart.current = null; // パンを無効化
+      }
+    }
+
+    function handleTouchMove(e: TouchEvent) {
+      e.preventDefault(); // ブラウザズーム・スクロール抑制 — 1.6
+      const t = transformRef.current;
+
+      if (e.touches.length === 2 && pinchStart.current) {
+        // 2本指ピンチ — 1.5
+        const dist = getTouchDist(e.touches);
+        const newScale = Math.max(0.3, Math.min(20, pinchStart.current.scale * (dist / pinchStart.current.dist)));
+        onTransformChangeRef.current({ ...t, scale: newScale });
+      } else if (e.touches.length === 1 && touchStart.current && !pinchStart.current) {
+        // 1本指パン — 1.4
+        const touch = e.touches[0];
+        const dx = touch.clientX - touchStart.current.x;
+        const dy = touch.clientY - touchStart.current.y;
+        if (!touchHasDragged.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+          touchHasDragged.current = true;
+        }
+        onTransformChangeRef.current({ ...t, x: touchStart.current.tx + dx, y: touchStart.current.ty + dy });
+      }
+    }
+
+    function handleTouchEnd(e: TouchEvent) {
+      // 1.7: タップ判定 (ドラッグなし & edit モード)
+      if (!touchHasDragged.current && mapModeRef.current === 'edit' && touchStart.current) {
+        const touch = e.changedTouches[0];
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        const g = el?.closest<SVGGElement>('g[data-region-id]');
+        if (g?.dataset.regionId) onRegionClickRef.current(g.dataset.regionId);
+      }
+      // 1.7: 指の本数に応じてリセット
+      if (e.touches.length === 0) {
+        touchStart.current = null;
+        touchHasDragged.current = false;
+        pinchStart.current = null;
+      } else if (e.touches.length === 1) {
+        // ピンチ終了後に1本指パンを再開できるよう再初期化
+        pinchStart.current = null;
+        const touch = e.touches[0];
+        const t = transformRef.current;
+        touchStart.current = { x: touch.clientX, y: touch.clientY, tx: t.x, ty: t.y };
+        touchHasDragged.current = false;
+      }
+    }
+
+    el.addEventListener('touchstart', handleTouchStart, { passive: false });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    el.addEventListener('touchend', handleTouchEnd, { passive: false });
+    el.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('touchend', handleTouchEnd);
+      el.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, []); // マウント時のみ登録。transform は ref 経由で参照する
 
   // ホイールでズーム
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -97,50 +194,18 @@ export default function GeoMapCanvas({ template, collection, transform, onTransf
     panStart.current = null;
   }, []);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    touchStart.current = { x: touch.clientX, y: touch.clientY, tx: transform.x, ty: transform.y };
-    touchHasDragged.current = false;
-  }, [transform]);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    e.preventDefault();
-    if (!touchStart.current) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - touchStart.current.x;
-    const dy = touch.clientY - touchStart.current.y;
-    if (!touchHasDragged.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-      touchHasDragged.current = true;
-    }
-    onTransformChange({ ...transform, x: touchStart.current.tx + dx, y: touchStart.current.ty + dy });
-  }, [transform, onTransformChange]);
-
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (!touchHasDragged.current && mapMode === 'edit' && touchStart.current) {
-      const touch = e.changedTouches[0];
-      const el = document.elementFromPoint(touch.clientX, touch.clientY);
-      const g = el?.closest<SVGGElement>('g[data-region-id]');
-      if (g?.dataset.regionId) onRegionClick(g.dataset.regionId);
-    }
-    touchStart.current = null;
-    touchHasDragged.current = false;
-  }, [mapMode, onRegionClick]);
-
   const { canvasWidth, canvasHeight, regions } = template;
 
   return (
     <div
+      ref={containerRef} // 1.1
       className="w-full h-full overflow-hidden relative cursor-grab active:cursor-grabbing select-none"
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchEnd}
+      // onTouchStart / onTouchMove / onTouchEnd / onTouchCancel は削除 — 1.2
     >
       <svg
         ref={svgRef}

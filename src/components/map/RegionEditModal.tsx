@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Upload, Trash2, Download, ZoomIn, ZoomOut, Move } from "lucide-react";
+import { Upload, Trash2, Download, ZoomOut, Move } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -21,6 +21,12 @@ interface Props {
   onClose: () => void;
 }
 
+function getTouchDist(touches: React.TouchList): number {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 export default function RegionEditModal({ region, existingAssignment, onSave, onDelete, onClose }: Props) {
   const normalized = normalizeRegion(region);
   const displayPath = scaledPath(normalized.normalizedPath, PREVIEW_SIZE);
@@ -32,7 +38,11 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
   const [offsetY, setOffsetY] = useState(existingAssignment?.photoSettings.offsetY ?? 0);
   const [isDragging, setIsDragging] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // マウス・タッチ共用のドラッグ開始状態
   const dragStart = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+  // ピンチ開始状態
+  const pinchStart = useRef<{ dist: number; scale: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 既存の写真を読み込む
@@ -57,7 +67,7 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
     setOffsetY(0);
   }, [photoUrl]);
 
-  // ドラッグで位置調整
+  // ---- マウス操作 ----
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setIsDragging(true);
     dragStart.current = { x: e.clientX, y: e.clientY, ox: offsetX, oy: offsetY };
@@ -65,7 +75,6 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging || !dragStart.current) return;
-    // スケール係数を考慮してピクセル変化量を正規化
     const factor = 1 / (PREVIEW_SIZE * scale);
     setOffsetX(dragStart.current.ox + (e.clientX - dragStart.current.x) * factor);
     setOffsetY(dragStart.current.oy + (e.clientY - dragStart.current.y) * factor);
@@ -76,13 +85,50 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
     dragStart.current = null;
   }, []);
 
+  // ---- タッチ操作 (touch-action:none で preventDefault 不要) ----
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      dragStart.current = { x: touch.clientX, y: touch.clientY, ox: offsetX, oy: offsetY };
+      pinchStart.current = null;
+    } else if (e.touches.length === 2) {
+      pinchStart.current = { dist: getTouchDist(e.touches), scale };
+      dragStart.current = null;
+    }
+  }, [offsetX, offsetY, scale]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStart.current) {
+      // ピンチでスケール調整
+      const dist = getTouchDist(e.touches);
+      setScale(Math.max(0.5, Math.min(4, pinchStart.current.scale * (dist / pinchStart.current.dist))));
+    } else if (e.touches.length === 1 && dragStart.current && !pinchStart.current) {
+      // 1本指ドラッグで位置調整
+      const touch = e.touches[0];
+      const factor = 1 / (PREVIEW_SIZE * scale);
+      setOffsetX(dragStart.current.ox + (touch.clientX - dragStart.current.x) * factor);
+      setOffsetY(dragStart.current.oy + (touch.clientY - dragStart.current.y) * factor);
+    }
+  }, [scale]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 0) {
+      dragStart.current = null;
+      pinchStart.current = null;
+    } else if (e.touches.length === 1) {
+      // ピンチ終了後、1本指ドラッグを再開できるよう再初期化
+      pinchStart.current = null;
+      const touch = e.touches[0];
+      dragStart.current = { x: touch.clientX, y: touch.clientY, ox: offsetX, oy: offsetY };
+    }
+  }, [offsetX, offsetY]);
+
   async function handleSave() {
     if (!photoUrl) return;
     setSaving(true);
     try {
       let blob = photoBlob;
       if (!blob && existingAssignment) {
-        // 写真は変えず設定のみ更新 → 既存 blob を再取得
         const { loadPhoto } = await import("@/lib/storage/photo-db");
         const existing = await loadPhoto(existingAssignment.photoKey);
         if (existing) blob = existing;
@@ -99,7 +145,6 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
     await exportSingleClipPng(region, photoBlob, { scale, offsetX, offsetY });
   }
 
-  // プレビュー表示用の画像座標
   const imgSize = PREVIEW_SIZE * scale;
   const imgX = PREVIEW_SIZE / 2 - imgSize / 2 + offsetX * PREVIEW_SIZE * scale;
   const imgY = PREVIEW_SIZE / 2 - imgSize / 2 + offsetY * PREVIEW_SIZE * scale;
@@ -112,14 +157,18 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* プレビュー */}
+          {/* プレビュー — touch-none でブラウザのスクロール・ズームを抑制 */}
           <div
-            className="mx-auto relative cursor-move overflow-hidden rounded border bg-[repeating-conic-gradient(#80808020_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]"
+            className="mx-auto relative overflow-hidden rounded border bg-[repeating-conic-gradient(#80808020_0%_25%,transparent_0%_50%)] bg-[length:16px_16px] touch-none cursor-move select-none"
             style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
           >
             <svg width={PREVIEW_SIZE} height={PREVIEW_SIZE} className="absolute inset-0">
               <defs>

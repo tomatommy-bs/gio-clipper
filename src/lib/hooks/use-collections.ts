@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { Collection } from "@/lib/storage/types";
 import {
@@ -12,11 +12,7 @@ import {
 import { deletePhoto } from "@/lib/storage/photo-db";
 
 export function useCollections() {
-  const [collections, setCollections] = useState<Collection[]>([]);
-
-  useEffect(() => {
-    setCollections(getAllCollections());
-  }, []);
+  const [collections, setCollections] = useState<Collection[]>(() => getAllCollections());
 
   const refresh = useCallback(() => {
     setCollections(getAllCollections());

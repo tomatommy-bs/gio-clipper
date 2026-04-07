@@ -71,7 +71,9 @@ export function useRegionAssignment(collectionId: string) {
       if (!col) return;
       const existing = col.assignments[regionId];
       if (existing) await deletePhoto(existing.photoKey);
-      const { [regionId]: _, ...rest } = col.assignments;
+      const assignments = { ...col.assignments };
+      delete assignments[regionId];
+      const rest = assignments;
       const updated: Collection = {
         ...col,
         updatedAt: Date.now(),
