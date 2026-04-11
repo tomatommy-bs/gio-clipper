@@ -8,7 +8,8 @@ import type { Collection, RegionAssignment } from "@/lib/storage/types";
 import { loadPhoto } from "@/lib/storage/photo-db";
 import { normalizeRegion, scaledPath } from "@/lib/geo/normalize";
 
-const MIN_LONG_SIDE = 1024;
+const MIN_LONG_SIDE = 2048;
+const MAX_EXPORT_SIZE = 4096;
 
 function formatDate(): string {
   const d = new Date();
@@ -48,18 +49,21 @@ export async function exportSingleClipPng(
 ): Promise<void> {
   const normalized = normalizeRegion(region);
 
-  // 出力解像度を決定（最小1024px）
-  const outputSize = Math.max(MIN_LONG_SIDE, 1024);
+  // 画像を先に読み込み、実際の解像度を出力サイズに反映する
+  const img = await blobToImageElement(photoBlob);
+  const imgLongEdge = Math.max(img.naturalWidth, img.naturalHeight);
+  const outputSize = Math.min(MAX_EXPORT_SIZE, Math.max(MIN_LONG_SIDE, imgLongEdge));
+
   const canvas = document.createElement("canvas");
   canvas.width = outputSize;
   canvas.height = outputSize;
   const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
 
   // クリッピングパス（正規化パスをoutputSizeにスケール）
   const scaledPathStr = scaledPath(normalized.normalizedPath, outputSize, 0);
   const clipPath2D = new Path2D(scaledPathStr);
-
-  const img = await blobToImageElement(photoBlob);
 
   ctx.save();
   ctx.clip(clipPath2D);
@@ -92,6 +96,8 @@ export async function exportCollectionPng(
   canvas.width = outW;
   canvas.height = outH;
   const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.scale(scaleFactor, scaleFactor);
 
   for (const region of template.regions) {
