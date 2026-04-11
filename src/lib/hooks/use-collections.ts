@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { Collection } from "@/lib/storage/types";
 import {
@@ -12,7 +12,12 @@ import {
 import { deletePhoto } from "@/lib/storage/photo-db";
 
 export function useCollections() {
-  const [collections, setCollections] = useState<Collection[]>(() => getAllCollections());
+  // SSR と一致させるため空配列で初期化し、hydration 後に localStorage から読み込む
+  const [collections, setCollections] = useState<Collection[]>([]);
+
+  useEffect(() => {
+    setCollections(getAllCollections());
+  }, []);
 
   const refresh = useCallback(() => {
     setCollections(getAllCollections());

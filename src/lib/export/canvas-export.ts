@@ -1,3 +1,6 @@
+// このモジュールは document.createElement / Canvas / URL.createObjectURL など
+// ブラウザ専用 API を直接使用するため、Server Component から誤って import されないよう
+// モジュール境界を明示している。
 "use client";
 
 import type { GeoTemplate, GeoRegion } from "@/lib/geo/types";
