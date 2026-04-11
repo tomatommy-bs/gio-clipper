@@ -1,14 +1,14 @@
 "use client";
 
-const MAX_LONG_EDGE = 2048;
-const JPEG_QUALITY = 0.92;
+const MAX_LONG_EDGE = 4096;
 
 /**
- * File を Canvas 経由で JPEG Blob に正規化する。
+ * File を Canvas 経由で PNG Blob に正規化する。
  *
  * - Android Google Photos のクラウド写真: img.onload で実データのダウンロード完了を待つ
- * - HEIC 等の非対応フォーマット: Canvas 経由で JPEG に変換
- * - 長辺 2048px 超の画像: アスペクト比を保ってリサイズ
+ * - HEIC 等の非対応フォーマット: Canvas 経由で PNG に変換
+ * - 長辺 4096px 超の画像: アスペクト比を保ってリサイズ
+ * - PNG（ロスレス）で保存するためファイルサイズは増加するが画質劣化なし
  */
 export function normalizePhoto(file: File): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -44,8 +44,7 @@ export function normalizePhoto(file: File): Promise<Blob> {
             reject(new Error("Canvas から Blob への変換に失敗しました"));
           }
         },
-        "image/jpeg",
-        JPEG_QUALITY
+        "image/png"
       );
     };
 
