@@ -8,6 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { normalizeRegion, scaledPath } from "@/lib/geo/normalize";
 import { exportSingleClipPng } from "@/lib/export/canvas-export";
 import { getPhotoUrl } from "@/lib/storage/photo-db";
+import { normalizePhoto } from "@/lib/storage/photo-normalize";
 import type { GeoRegion } from "@/lib/geo/types";
 import type { RegionAssignment } from "@/lib/storage/types";
 
@@ -38,6 +39,8 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
   const [offsetY, setOffsetY] = useState(existingAssignment?.photoSettings.offsetY ?? 0);
   const [isDragging, setIsDragging] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadingPhoto, setLoadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   // マウス・タッチ共用のドラッグ開始状態
   const dragStart = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
@@ -56,15 +59,25 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
   }, [existingAssignment]);
 
   // 新しい写真を選択したとき
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPhotoBlob(file);
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
-    setPhotoUrl(url);
-    setOffsetX(0);
-    setOffsetY(0);
+    setLoadingPhoto(true);
+    setPhotoError(null);
+    try {
+      const normalized = await normalizePhoto(file);
+      const url = URL.createObjectURL(normalized);
+      setPhotoBlob(normalized);
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
+      setPhotoUrl(url);
+      setOffsetX(0);
+      setOffsetY(0);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "写真の読み込みに失敗しました";
+      setPhotoError(message);
+    } finally {
+      setLoadingPhoto(false);
+    }
   }, [photoUrl]);
 
   // ---- マウス操作 ----
@@ -205,10 +218,13 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
 
           {/* ファイル選択 */}
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-          <Button variant="outline" size="sm" className="w-full" onClick={() => fileInputRef.current?.click()}>
+          <Button variant="outline" size="sm" className="w-full" disabled={loadingPhoto} onClick={() => fileInputRef.current?.click()}>
             <Upload className="w-3.5 h-3.5 mr-1" />
-            {photoUrl ? "写真を変更" : "写真を選択"}
+            {loadingPhoto ? "読み込み中..." : photoUrl ? "写真を変更" : "写真を選択"}
           </Button>
+          {photoError && (
+            <p className="text-xs text-destructive text-center">{photoError}</p>
+          )}
 
           {/* スケール調整 */}
           {photoUrl && (
@@ -243,7 +259,7 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
           </div>
           <div className="flex gap-2 ml-auto">
             <Button variant="outline" size="sm" onClick={onClose}>キャンセル</Button>
-            <Button size="sm" onClick={handleSave} disabled={!photoUrl || saving}>
+            <Button size="sm" onClick={handleSave} disabled={!photoUrl || saving || loadingPhoto}>
               {saving ? "保存中..." : "保存"}
             </Button>
           </div>
