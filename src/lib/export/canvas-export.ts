@@ -65,12 +65,19 @@ export async function exportSingleClipPng(
   const scaledPathStr = scaledPath(normalized.normalizedPath, outputSize, 0);
   const clipPath2D = new Path2D(scaledPathStr);
 
+  // scaledPath(padding=0) のマッピング: normalized[0,1] → [0, outputSize]
+  // region の bbox 中心をキャンバス座標系で求める（GeoMapCanvas と同じ基準点）
+  const { width: bboxW, height: bboxH } = normalized.originalBbox;
+  const bboxSize = Math.max(bboxW, bboxH);
+  const shapeCX = (bboxW / (2 * bboxSize)) * outputSize;
+  const shapeCY = (bboxH / (2 * bboxSize)) * outputSize;
+
   ctx.save();
   ctx.clip(clipPath2D);
 
   const imgSize = outputSize * settings.scale;
-  const imgX = outputSize / 2 - imgSize / 2 + settings.offsetX * outputSize * settings.scale;
-  const imgY = outputSize / 2 - imgSize / 2 + settings.offsetY * outputSize * settings.scale;
+  const imgX = shapeCX - imgSize / 2 + settings.offsetX * imgSize;
+  const imgY = shapeCY - imgSize / 2 + settings.offsetY * imgSize;
   ctx.drawImage(img, imgX, imgY, imgSize, imgSize);
   ctx.restore();
 

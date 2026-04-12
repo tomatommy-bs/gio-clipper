@@ -34,6 +34,8 @@ export function normalizePhoto(file: File): Promise<Blob> {
         return;
       }
 
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       ctx.drawImage(img, 0, 0, dw, dh);
 
       canvas.toBlob(

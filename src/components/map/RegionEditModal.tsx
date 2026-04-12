@@ -13,6 +13,8 @@ import type { GeoRegion } from "@/lib/geo/types";
 import type { RegionAssignment } from "@/lib/storage/types";
 
 const PREVIEW_SIZE = 280;
+const PREVIEW_PADDING = 8; // scaledPath のデフォルト padding と同値
+const PREVIEW_DRAW = PREVIEW_SIZE - 2 * PREVIEW_PADDING; // 264
 
 interface Props {
   region: GeoRegion;
@@ -88,7 +90,7 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging || !dragStart.current) return;
-    const factor = 1 / (PREVIEW_SIZE * scale);
+    const factor = 1 / (PREVIEW_DRAW * scale);
     setOffsetX(dragStart.current.ox + (e.clientX - dragStart.current.x) * factor);
     setOffsetY(dragStart.current.oy + (e.clientY - dragStart.current.y) * factor);
   }, [isDragging, scale]);
@@ -118,7 +120,7 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
     } else if (e.touches.length === 1 && dragStart.current && !pinchStart.current) {
       // 1本指ドラッグで位置調整
       const touch = e.touches[0];
-      const factor = 1 / (PREVIEW_SIZE * scale);
+      const factor = 1 / (PREVIEW_DRAW * scale);
       setOffsetX(dragStart.current.ox + (touch.clientX - dragStart.current.x) * factor);
       setOffsetY(dragStart.current.oy + (touch.clientY - dragStart.current.y) * factor);
     }
@@ -158,9 +160,15 @@ export default function RegionEditModal({ region, existingAssignment, onSave, on
     await exportSingleClipPng(region, photoBlob, { scale, offsetX, offsetY });
   }
 
-  const imgSize = PREVIEW_SIZE * scale;
-  const imgX = PREVIEW_SIZE / 2 - imgSize / 2 + offsetX * PREVIEW_SIZE * scale;
-  const imgY = PREVIEW_SIZE / 2 - imgSize / 2 + offsetY * PREVIEW_SIZE * scale;
+  // region の bbox 中心をプレビュー座標系で求める（scaledPath のマッピングに合わせる）
+  const { width: bboxW, height: bboxH } = normalized.originalBbox;
+  const bboxSize = Math.max(bboxW, bboxH);
+  const shapeCX = (bboxW / (2 * bboxSize)) * PREVIEW_DRAW + PREVIEW_PADDING;
+  const shapeCY = (bboxH / (2 * bboxSize)) * PREVIEW_DRAW + PREVIEW_PADDING;
+  // imgSize: GeoMapCanvas / exportCollectionPng と同じ「size を基準にしたスケール」
+  const imgSize = scale * PREVIEW_DRAW;
+  const imgX = shapeCX - imgSize / 2 + offsetX * imgSize;
+  const imgY = shapeCY - imgSize / 2 + offsetY * imgSize;
 
   return (
     <Dialog open onOpenChange={onClose}>
